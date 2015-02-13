@@ -55,28 +55,38 @@ class httpBLMiddleware(object):
 
 
     # -------------------------------------------------------------------
-    def _valid_cached_data(self, request):
-        # Checks if we have cached data in the session and if it is still valid.
-        if 'httpBL' in request.session:
-            last_state = request.session['httpBL']
-        
-            # There is a httpBL dict in the session
+    def _valid_cached_data(self, last_state, ip):
+        # Checks if we have cached data and if it is still valid.
+        if last_state:
+
             # check if last check was successful, if not we'll retry
             if not last_state['error']:
-                # check the required cache duration
-                cache_duration = getattr(settings, 'HTTPBL_CACHE_RESULTS_SECONDS', config.cache_duration)
-                
-                # check if the last successful check was less than our refresh rate
-                if time.time() - last_state['timestamp'] < cache_duration:
-                    return True
+                # check if the last check was for the current ip address
+                # this is a new feature, so we must take an extra step for migration purposes
+                if 'ip' in last_state:
+                    if last_state['ip'] == ip:
+                        # check the required cache duration
+                        cache_duration = getattr(settings, 'HTTPBL_CACHE_RESULTS_SECONDS', config.cache_duration)
+                        
+                        # check if the last successful check was less than our refresh rate
+                        if time.time() - last_state['timestamp'] < cache_duration:
+                            # The previous data is within our cache duration
+                            # Everything checks out, cached data is valid
+                            return True
+                        else:
+                            # Previous data has expired, refresh the data
+                            return False
+                    else:
+                        # The user has changed IP address, refresh the data
+                        return False
                 else:
-                    # Previous data has expired
+                    # Did not record the IP last time, refresh the data
                     return False
             else:
                 # last time we checked we got an error
                 return False
         else:
-            # No httpBL dict found
+            # last_state was None
             return False
 
 
@@ -153,7 +163,7 @@ class httpBLMiddleware(object):
         
     
     # -------------------------------------------------------------------
-    def _analyze_httpBL_result(self, httpBL_response):
+    def _analyze_httpBL_result(self, httpBL_response, current_ip):
         httpBL = {}
         httpBL['response'] = 'none'
         httpBL['unknown'] = True
@@ -165,6 +175,7 @@ class httpBLMiddleware(object):
         httpBL['last_activity'] = int(0)
         httpBL['searchengine'] = False
         httpBL['timestamp'] = time.time()
+        httpBL['ip'] = current_ip
         
         # httpBL responds with a 'fake' ip address in which each octet has a meaning.
         resultlist = self._split_ip(httpBL_response)
@@ -210,6 +221,7 @@ class httpBLMiddleware(object):
         # IP addresses are innocent until proven guilty because http:BL does not maintain records for all IP addresses.
         httpBL = {}
         httpBL['error'] = False
+        httpBL['ip'] = ip
         httpBL['timestamp'] = time.time()
 
         # Reverse the ip address as required by the API
@@ -227,7 +239,7 @@ class httpBLMiddleware(object):
                     # We received a response from httpBL
                     # This means the IP is known to httpBL
                     # Process the result
-                    httpBL = self._analyze_httpBL_result(httpBL_reponse)
+                    httpBL = self._analyze_httpBL_result(httpBL_reponse, ip)
                     
                     if not httpBL['error']:
                         
@@ -271,15 +283,18 @@ class httpBLMiddleware(object):
     
     def process_request(self, request):
         
-        # First check if we have valid cached data
-        if self._valid_cached_data(request):
+        # Extract the requestor's IP address
+        ip = self._get_ip(request)
+        
+        # Extract the cached httpBL data
+        cached_httpBL = request.session.get('httpBL')
+        
+        if cached_httpBL and self._valid_cached_data(cached_httpBL, ip):
             # There is cached data in the session and it has not expired, so do nothing
             return None
         else:
             # There is no (valid) cached data, so lets contact httpBL
-            #  Extract the requestor's IP address
-            ip = self._get_ip(request)
-            
+
             # Query the httpBL API
             httpBL = self._query_httpBL_API(ip)
             

@@ -5,7 +5,7 @@ from django.conf import settings
 from django.test import TestCase, override_settings
 from django.test.client import RequestFactory
 
-from time import sleep
+from time import sleep, time
 
 
 class HttpBLMiddlewareTestCase(TestCase):
@@ -85,29 +85,50 @@ class HttpBLMiddlewareTestCase(TestCase):
     
     
     def test_valid_cached_data_no_httpBL(self):
-        # test with no httpBL dict in the session
         # happens when this is a new user on the site
-        request = self.factory.get('/')
-        request.session = {}
-        self.assertFalse(self.middleware._valid_cached_data(request))
+        self.assertFalse(self.middleware._valid_cached_data(last_state=None, ip='127.0.0.1'))
         
         
     def test_valid_cached_data_httpBL_error(self):
-        # test with httpBL dict that has an error in the session
-        # happens when this is a new user on the site
-        request = self.factory.get('/')
-        request.session = {}
-        
+        # test with httpBL dict that has an error in the session        
         # create an error version of the httpBL dict
         httpBL = {}
         httpBL['error'] = True
+                
+        self.assertFalse(self.middleware._valid_cached_data(last_state=httpBL, ip='127.0.0.1'))
         
-        # stuff the httpBL dict into the session
-        request.session['httpBL'] = httpBL
         
-        self.assertFalse(self.middleware._valid_cached_data(request))
+    def test_valid_cached_data_different_ip(self):
+        # test with httpBL dict that has adifferent ip from the current ip        
+        httpBL = {}
+        httpBL['error'] = False
+        httpBL['ip'] = '127.0.0.1'
+                
+        self.assertFalse(self.middleware._valid_cached_data(last_state=httpBL, ip='127.0.0.2'))
         
     
+    def test_valid_cached_data_not_expired(self):
+        httpBL = {}
+        httpBL['error'] = False
+        httpBL['ip'] = '127.0.0.1'
+        httpBL['timestamp'] = time()
+        
+        self.assertTrue(self.middleware._valid_cached_data(last_state=httpBL, ip='127.0.0.1'))
+        
+        
+    def test_valid_cached_data_expired(self):
+        httpBL = {}
+        httpBL['error'] = False
+        httpBL['ip'] = '127.0.0.1'
+        
+        # retrieve the current cache duration setting
+        cache_duration = getattr(settings, 'HTTPBL_CACHE_RESULTS_SECONDS', config.cache_duration)
+    
+        # create an expire timestamp
+        httpBL['timestamp'] = time() - float(cache_duration) - 1.0
+        
+        self.assertFalse(self.middleware._valid_cached_data(last_state=httpBL, ip='127.0.0.1'))
+        
    
     def test_is_valid_ip_octet(self):
         # test that all number 0 - 255 pass
@@ -124,7 +145,7 @@ class HttpBLMiddlewareTestCase(TestCase):
         self.assertFalse(self.middleware._is_valid_ip_octet('2a6'))
         
 
-    def test_spilt_ip(self):
+    def test_split_ip(self):
         # test with basic ip address
         self.assertEqual(self.middleware._split_ip('127.0.0.1'), ['127','0','0','1'])
         
@@ -161,24 +182,25 @@ class HttpBLMiddlewareTestCase(TestCase):
     def test_analyze_httpBL_result_bad_result(self):
         # If the first octet is different from 127, we have an error response
         httpBL_result = '128.0.0.1'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertTrue(httpBL['error'])
     
     
     def test_analyze_httpBL_result_searchengine(self):
         httpBL_result = '127.1.1.0'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertFalse(httpBL['is_suspicious'])
         self.assertFalse(httpBL['is_harvester'])
         self.assertFalse(httpBL['is_comment_spammer'])
         self.assertNotEqual(httpBL['searchengine'], False)
+        self.assertEqual(httpBL['ip'], '127.0.0.1')
     
     
     def test_analyze_httpBL_result_suspicious(self):
         httpBL_result = '127.1.1.1'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertTrue(httpBL['is_suspicious'])
@@ -188,7 +210,7 @@ class HttpBLMiddlewareTestCase(TestCase):
     
     def test_analyze_httpBL_result_harvester(self):
         httpBL_result = '127.1.1.2'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertFalse(httpBL['is_suspicious'])
@@ -199,7 +221,7 @@ class HttpBLMiddlewareTestCase(TestCase):
     
     def test_analyze_httpBL_result_suspicious_harvester(self):
         httpBL_result = '127.1.1.3'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertTrue(httpBL['is_suspicious'])
@@ -210,7 +232,7 @@ class HttpBLMiddlewareTestCase(TestCase):
     
     def test_analyze_httpBL_result_comment_spammer(self):
         httpBL_result = '127.1.1.4'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertFalse(httpBL['is_suspicious'])
@@ -221,7 +243,7 @@ class HttpBLMiddlewareTestCase(TestCase):
     
     def test_analyze_httpBL_result_suspicious_comment_spammer(self):
         httpBL_result = '127.1.1.5'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertTrue(httpBL['is_suspicious'])
@@ -232,7 +254,7 @@ class HttpBLMiddlewareTestCase(TestCase):
     
     def test_analyze_httpBL_result_harvester_comment_spammer(self):
         httpBL_result = '127.1.1.6'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertFalse(httpBL['is_suspicious'])
@@ -243,7 +265,7 @@ class HttpBLMiddlewareTestCase(TestCase):
     
     def test_analyze_httpBL_result_suspicious_harvester_comment_spammer(self):
         httpBL_result = '127.1.1.7'
-        httpBL = self.middleware._analyze_httpBL_result(httpBL_result)
+        httpBL = self.middleware._analyze_httpBL_result(httpBL_result, '127.0.0.1')
         self.assertFalse(httpBL['error'])
         self.assertFalse(httpBL['unknown'])
         self.assertTrue(httpBL['is_suspicious'])
@@ -287,23 +309,6 @@ class HttpBLMiddlewareTestCase(TestCase):
         # check if the httpBL dict is in the session of the request.
         httpBL = request.session.get('httpBL', None)
         self.assertNotEqual(httpBL, None)
-        
-        # Next lets test that the timestamp works.
-        # if we run process_request again immediately, nothing should change
-        prev_time = httpBL['timestamp']
-        
-        self.middleware.process_request(request)
-        httpBL = request.session.get('httpBL', None)
-        
-        self.assertEqual(prev_time, httpBL['timestamp'])
-        
-        # now sleep and try again, we should get a new record
-        sleep(settings.HTTPBL_CACHE_RESULTS_SECONDS)
-        
-        self.middleware.process_request(request)
-        httpBL = request.session.get('httpBL', None)
-        
-        self.assertNotEqual(prev_time, httpBL['timestamp'])
         
         
 
