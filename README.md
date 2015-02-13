@@ -10,7 +10,7 @@ Below, I'll first show you how you would use this, followed by installation and 
 
 If you are following along with your project, make sure you go through the installation and configuration steps first, they are further down this page.
 
-###Step 1 - Extract the httpBL dict from session
+###Step 1 - Find the httpBL dict in the session
 ~~~python
 def myview(request):
 	...
@@ -53,7 +53,7 @@ Key                   | Meaning
 'is\_suspicious'      | Suspicious behavior has been observed for this IP address.
 'searchengine'        | The IP address is known to belong to a search engine.
 
-The 'is\_harvester', 'is\_comment\_spammer', 'is\_suspicious' may all be true at the same time.
+The 'is\_harvester', 'is\_comment\_spammer', 'is\_suspicious' keys may all be true at the same time.
 
 The value for 'searchengine' is False if the IP is not deemed to be a search engine or is a string containing the name of the search engine, if it is deemed to be a search engine.
 
@@ -93,7 +93,7 @@ At this time you cannot install use pip to install **httpBL-django**. So, the ea
 
 Next move the httpBL folder you'll find in the zip file into the root folder of your django project. So it becomes an app inside your project.
 
-Now the **httpBL-django** needs to be configured in your project's settings.py
+Now **httpBL-django** needs to be configured in your project's settings.py
 
 ###1. Add httpBL to INSTALLED_APPS
 Because **httpBL-django** uses sessions to store the data, make sure django.contrib.sessions is enabled. If you do not use django.contrib.sessions, you'll need to make sure that there is a dict called 'session' in the HttpRequest (though this has not been tested).
@@ -147,7 +147,7 @@ HTTPBL_IP_HEADER = 'X-FORWARDED-FOR'
 ####HTTPBL\_CACHE\_RESULTS\_SECONDS
 To improve performance and reduce load on the http:BL service, results are effectively cached in the session. Every httpBL dict gets stored in it's relevant session and contains a timestamp. On each new request the timestamp is checked to see if the data has expired.
 
-If you do not configure the cache dureation, the following defaults will be used:
+If you do not configure the cache duration, the following defaults will be used:
 
 * if DEBUG == True, default cache duration is 10 seconds.
 * if DEBUG == False, default cache duration is 1 week.
