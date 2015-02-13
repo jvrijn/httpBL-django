@@ -226,5 +226,8 @@ Each log entry carries the prefix 'httpBL:'.
 I would much appreciate if you let me know if you are using this successfully on different versions of the the above platforms.
 
 ##Change history
-Feb 12, 2015 Initial commit
+
+Feb 13, 2015 - Bug fixes, test for changing ip
+
+Feb 12, 2015 - Initial commit
 
